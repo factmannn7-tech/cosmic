@@ -15,7 +15,9 @@ Output per segment:
 
 import json
 import re
+import time
 from google import genai
+from google.genai import errors as genai_errors
 from config import (
     GEMINI_API_KEY,
     SCRIPT_MODEL,
@@ -55,16 +57,25 @@ SCRIPT:
 """
 
 
+def _generate_with_retry(client, model, contents, max_retries=5):
+    for attempt in range(max_retries):
+        try:
+            return client.models.generate_content(model=model, contents=contents)
+        except (genai_errors.ServerError, Exception) as e:
+            if attempt == max_retries - 1:
+                raise
+            wait = 15 * (attempt + 1)
+            print(f"\n  [retry {attempt+1}/{max_retries}] {e!s:.80} — waiting {wait}s…")
+            time.sleep(wait)
+
+
 def split_script(script: str) -> list[dict]:
     prompt = _SPLITTER_PROMPT.format(
         visual_style=VISUAL_STYLE,
         script=script.strip(),
     )
     client = genai.Client(api_key=GEMINI_API_KEY)
-    response = client.models.generate_content(
-        model=SCRIPT_MODEL,
-        contents=prompt,
-    )
+    response = _generate_with_retry(client, SCRIPT_MODEL, prompt)
     raw = response.text.strip()
 
     # Strip markdown fences if Gemini wrapped the JSON

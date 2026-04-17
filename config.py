@@ -6,9 +6,9 @@ load_dotenv()
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
 # ── Models ─────────────────────────────────────────────────────────────────────
-SCRIPT_MODEL  = "gemini-2.5-flash-preview-04-17"
+SCRIPT_MODEL  = "gemini-2.0-flash"
 VIDEO_MODEL   = "veo-3.1-fast-generate-preview"
-IMAGE_MODEL   = "imagen-3.0-generate-002"
+IMAGE_MODEL   = "imagen-4.0-generate-001"
 
 # ── Video / image settings ─────────────────────────────────────────────────────
 RAW_CLIP_DURATION = 8      # Veo generates 8-second clips
