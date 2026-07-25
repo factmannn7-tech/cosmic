@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Pop-It Runner 3D</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body {
+    width:100%; height:100%; overflow:hidden;
+    touch-action:none; -webkit-user-select:none; user-select:none;
+    background:#000; font-family:'Segoe UI', 'Arial Rounded MT Bold', Arial, sans-serif;
+  }
+  #bg { position:fixed; inset:0; z-index:0; }
+  #c  { position:fixed; inset:0; z-index:1; display:block; }
+  #hud { position:fixed; inset:0; z-index:2; pointer-events:none; }
+
+  /* ---- top progress bar ---- */
+  #barwrap {
+    position:absolute; top:calc(env(safe-area-inset-top, 0px) + 12px);
+    left:50%; transform:translateX(-50%);
+    width:min(72vw, 420px); height:14px;
+    background:rgba(255,255,255,0.35); border:2px solid rgba(255,255,255,0.9);
+    border-radius:10px; overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,0.25);
+  }
+  #barfill {
+    height:100%; width:0%; border-radius:8px;
+    background:#FFC913; transition:background-color 1s;
+  }
+  #score {
+    position:absolute; top:calc(env(safe-area-inset-top, 0px) + 34px);
+    left:50%; transform:translateX(-50%);
+    color:#fff; font-weight:800; font-size:clamp(16px,4.5vw,24px);
+    text-shadow:0 2px 4px rgba(0,0,0,0.4); letter-spacing:1px;
+  }
+  #combo {
+    position:absolute; top:22%; left:50%; transform:translate(-50%,-50%) scale(0);
+    color:#fff; font-weight:900; font-size:clamp(26px,8vw,44px); font-style:italic;
+    text-shadow:0 3px 0 rgba(0,0,0,0.3), 0 0 18px rgba(255,255,255,0.6);
+    transition:transform 0.15s; white-space:nowrap;
+  }
+  #combo.show { transform:translate(-50%,-50%) scale(1); }
+
+  /* ---- corner characters ---- */
+  .char {
+    position:absolute; top:calc(env(safe-area-inset-top, 0px) + 64px);
+    width:clamp(48px,14vw,72px); height:clamp(48px,14vw,72px);
+    border-radius:50%; background:rgba(255,255,255,0.85);
+    border:3px solid #fff; box-shadow:0 3px 10px rgba(0,0,0,0.3);
+    display:flex; align-items:center; justify-content:center;
+    font-size:clamp(28px,8vw,42px); transition:transform 0.4s;
+  }
+  #farmer { left:10px; }
+  #thief  { right:10px; }
+  #warn {
+    position:absolute; top:32%; left:50%; transform:translateX(-50%);
+    color:#fff; background:rgba(200,30,30,0.85); padding:6px 16px; border-radius:20px;
+    font-weight:800; font-size:clamp(14px,4vw,20px); white-space:nowrap;
+    opacity:0; transition:opacity 0.25s;
+  }
+
+  /* ---- pepper hit effects ---- */
+  #flash {
+    position:absolute; inset:0; opacity:0; pointer-events:none;
+    background:radial-gradient(circle at 50% 55%, rgba(255,120,0,0.55) 0%, rgba(255,30,0,0.75) 65%, rgba(160,0,0,0.9) 100%);
+  }
+  #firelayer { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+  .fire {
+    position:absolute; bottom:-12vh; font-size:clamp(30px,9vw,52px);
+    animation:fireUp 1.5s ease-out forwards;
+  }
+  @keyframes fireUp {
+    0%   { transform:translateY(0) scale(0.6) rotate(0deg); opacity:0; }
+    15%  { opacity:1; }
+    100% { transform:translateY(-115vh) scale(1.5) rotate(25deg); opacity:0; }
+  }
+  #bigpepper {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) scale(0);
+    font-size:clamp(90px,34vw,190px); filter:drop-shadow(0 6px 18px rgba(0,0,0,0.5));
+    transition:transform 0.25s cubic-bezier(0.2,1.6,0.4,1);
+  }
+  #bigpepper.show { transform:translate(-50%,-50%) scale(1); }
+
+  /* ---- overlays ---- */
+  .overlay {
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:18px; text-align:center;
+    background:rgba(20,20,40,0.55); backdrop-filter:blur(3px);
+    color:#fff; pointer-events:auto; transition:opacity 0.35s;
+  }
+  .overlay.hidden { opacity:0; pointer-events:none; }
+  .overlay h1 {
+    font-size:clamp(30px,9vw,52px); font-weight:900; letter-spacing:1px;
+    text-shadow:0 4px 0 rgba(0,0,0,0.35);
+  }
+  .overlay p { font-size:clamp(16px,4.6vw,22px); font-weight:700; line-height:1.5;
+    text-shadow:0 2px 4px rgba(0,0,0,0.4); padding:0 24px; }
+  .overlay .btn {
+    margin-top:8px; padding:14px 40px; border-radius:40px; border:none;
+    background:linear-gradient(180deg,#5CE87A,#22C93F); color:#fff;
+    font-size:clamp(18px,5vw,24px); font-weight:900; cursor:pointer;
+    box-shadow:0 6px 0 #148C2A, 0 10px 20px rgba(0,0,0,0.35);
+  }
+  .pulse { animation:pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.08);} }
+
+  #mute {
+    position:absolute; right:10px; top:calc(env(safe-area-inset-top, 0px) + 10px);
+    width:38px; height:38px; border-radius:50%; border:2px solid rgba(255,255,255,0.8);
+    background:rgba(0,0,0,0.25); color:#fff; font-size:18px; cursor:pointer;
+    pointer-events:auto;
+  }
+</style>
+</head>
+<body>
+<div id="bg"></div>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div id="barwrap"><div id="barfill"></div></div>
+  <div id="score">0</div>
+  <div id="combo"></div>
+  <div id="farmer" class="char">👨‍🌾</div>
+  <div id="thief" class="char">🦹</div>
+  <div id="warn"></div>
+  <div id="flash"></div>
+  <div id="firelayer"></div>
+  <div id="bigpepper">🌶️</div>
+  <button id="mute">🔊</button>
+  <div id="start" class="overlay">
+    <h1>POP-IT RUNNER 3D</h1>
+    <p>👇 Basılı tut, bırakma!<br>El senin yerine otomatik patlatır.<br><br>🌶️ Kırmızı bibere dikkat —<br>el ona da basarsa her yer yanar!</p>
+    <p class="pulse" style="font-size:clamp(18px,5.5vw,26px)">BAŞLAMAK İÇİN BASILI TUT</p>
+  </div>
+  <div id="win" class="overlay hidden">
+    <h1>🏆 KAZANDIN!</h1>
+    <p id="winscore"></p>
+    <button class="btn" id="replay">TEKRAR OYNA</button>
+  </div>
+</div>
+
+<script src="three.min.js"></script>
+<script>
+'use strict';
+/* =========================================================================
+   POP-IT RUNNER 3D — gerçek 3D sahne (Three.js / WebGL)
+   Mekanik: basılı tut → el otomatik olarak sıradaki objeye uzanıp patlatır.
+   ========================================================================= */
+
+// ---------- stage palette (bar doldukça sarı→yeşil→mavi→mor→kırmızı) ----------
+const STAGES = [
+  { lane:0xF2B705, bubble:0xFFC81A, rim:0xFFE58A, crater:0xC29200, bg1:'#ffe9a3', bg2:'#f7b733' },
+  { lane:0x1FBF3C, bubble:0x2ED957, rim:0x8DF0A4, crater:0x12A032, bg1:'#b6f2c0', bg2:'#2ecc57' },
+  { lane:0x1E86F0, bubble:0x3FA1FF, rim:0x9CD1FF, crater:0x1570CC, bg1:'#bfe0ff', bg2:'#3f9df5' },
+  { lane:0x8E2DE2, bubble:0xA24DF5, rim:0xD3A6FF, crater:0x7526BF, bg1:'#e3ccff', bg2:'#9b4de0' },
+  { lane:0xE8352A, bubble:0xFF5A47, rim:0xFFA79B, crater:0xC22218, bg1:'#ffd2c9', bg2:'#f0503f' },
+];
+const STAGE_THRESHOLDS = [0, 20, 40, 60, 80];
+
+// ---------- tuning ----------
+const LANE_W       = 5.0;    // şerit genişliği
+const SPACING      = 2.6;    // objeler arası z mesafesi
+const HIT_Z        = 2.3;    // elin bastığı çizgi
+const MISS_Z       = 5.2;    // bu z'yi patlamadan geçen baloncuk = kaçırma
+const RECYCLE_Z    = 9.5;
+const SPAWN_EDGE   = -46;
+const SPEED_MIN    = 4.2;    // ısınma hızı
+const SPEED_MAX    = 11.5;   // kırmızı MAX hızı
+const PROGRESS_PER_POP = 1.55;
+const FREEZE_TIME  = 2.0;    // biber sonrası donma süresi (sn)
+const MISS_LIMIT   = 3;      // hırsız yetişme sınırı
+const MISS_PENALTY = 8;      // 3 kaçırmada bar cezası (%)
+
+// ---------- renderer / scene / camera ----------
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xffe9a3, 26, 54);
+
+const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 200);
+const CAM_POS = new THREE.Vector3(0, 13.2, 8.2);
+const CAM_TARGET = new THREE.Vector3(0, 0, -5.5);
+camera.position.copy(CAM_POS);
+camera.lookAt(CAM_TARGET);
+
+// ışık: üstten-soldan tek yumuşak ana ışık + dolgu (plastik oyuncak hissi)
+const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+sun.position.set(-7, 16, 4);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left = -10; sun.shadow.camera.right = 10;
+sun.shadow.camera.top = 12; sun.shadow.camera.bottom = -34;
+sun.shadow.camera.far = 60;
+sun.shadow.bias = -0.002;
+scene.add(sun, sun.target);
+sun.target.position.set(0, 0, -8);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x667799, 0.42));
+
+// ---------- şerit (lane) ----------
+const laneMat = new THREE.MeshPhongMaterial({ color:STAGES[0].lane, shininess:70, specular:0x666666 });
+const lane = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, 0.6, 90), laneMat);
+lane.position.set(0, -0.3, -25);
+lane.receiveShadow = true;
+scene.add(lane);
+
+const railMat = new THREE.MeshPhongMaterial({ color:0xffffff, shininess:60, specular:0x888888 });
+for (const sx of [-1, 1]) {
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.75, 90), railMat);
+  rail.position.set(sx * (LANE_W/2 + 0.27), -0.05, -25);
+  rail.receiveShadow = true; rail.castShadow = true;
+  scene.add(rail);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 90, 12), railMat);
+  cap.rotation.x = Math.PI/2;
+  cap.position.set(sx * (LANE_W/2 + 0.27), 0.33, -25);
+  scene.add(cap);
+}
+
+// ---------- hız çizgileri (motion streaks) ----------
+const streakMat = new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.25 });
+const streaks = [];
+{
+  const g = new THREE.BoxGeometry(0.07, 0.05, 1.4);
+  for (let i = 0; i < 18; i++) {
+    const m = new THREE.Mesh(g, streakMat);
+    const side = i % 2 === 0 ? -1 : 1;
+    m.position.set(side * (3.6 + Math.random()*2.6), 0.2 + Math.random()*1.2, -40 + Math.random()*48);
+    scene.add(m);
+    streaks.push(m);
+  }
+}
+
+// ---------- paylaşılan malzemeler / geometriler ----------
+const bubbleMat = new THREE.MeshPhongMaterial({
+  color:STAGES[0].bubble, shininess:120, specular:0xffffff,
+  transparent:true, opacity:0.96,
+});
+const rimMat = new THREE.MeshPhongMaterial({ color:STAGES[0].rim, shininess:110, specular:0xffffff });
+
+// krater içbükey gölgelendirmesi: gri tonlu radial doku × aşama rengi
+function makeCraterTexture() {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(128,128,10, 128,128,128);
+  g.addColorStop(0, '#6e6e6e'); g.addColorStop(0.55, '#b2b2b2'); g.addColorStop(1, '#f2f2f2');
+  ctx.fillStyle = g; ctx.fillRect(0,0,256,256);
+  // içbükey parlama: ışık üst-soldan → çukurun alt-sağ iç yüzü parlar
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 22;
+  ctx.shadowColor = 'rgba(255,255,255,0.9)'; ctx.shadowBlur = 26;
+  ctx.beginPath(); ctx.arc(128, 128, 86, Math.PI*0.05, Math.PI*0.45); ctx.stroke();
+  // üst-sol iç gölge
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.beginPath(); ctx.arc(128, 128, 86, Math.PI*1.05, Math.PI*1.45); ctx.stroke();
+  const tex = new THREE.CanvasTexture(cv);
+  tex.encoding = THREE.sRGBEncoding;
+  return tex;
+}
+const craterMat = new THREE.MeshBasicMaterial({ map:makeCraterTexture(), color:STAGES[0].crater });
+
+const domeGeo = new THREE.SphereGeometry(0.95, 28, 18, 0, Math.PI*2, 0, Math.PI/2);
+const craterDiscGeo = new THREE.CircleGeometry(0.86, 28);
+const craterRimGeo = new THREE.TorusGeometry(0.88, 0.1, 12, 28);
+
+// biber: tombul karikatür gövde (lathe) + yeşil sap — referans görseldeki gibi
+const pepperBodyMat = new THREE.MeshPhongMaterial({ color:0xE01F1F, shininess:130, specular:0xffffff });
+const stemMat = new THREE.MeshPhongMaterial({ color:0x2FA53A, shininess:80, specular:0xbbffbb });
+const highlightMat = new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.55 });
+
+function buildPepper() {
+  const grp = new THREE.Group();
+  // gövde profili: sivri kıvrık uç altta, tombul omuz üstte (referans: kısa-tombul emoji biber)
+  const pts = [];
+  const prof = [ [0.00,0.00],[0.16,0.02],[0.30,0.12],[0.44,0.34],[0.55,0.66],[0.62,1.00],
+                 [0.63,1.32],[0.58,1.62],[0.46,1.88],[0.28,2.04],[0.10,2.10],[0.00,2.10] ];
+  for (const [x,y] of prof) pts.push(new THREE.Vector2(x, y));
+  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 24), pepperBodyMat);
+  body.castShadow = true;
+  grp.add(body);
+  // alt uç hafif kıvrım (karikatür duruşu)
+  grp.rotation.z = -0.26;
+  // sap: belirgin parlak yeşil
+  const stem = new THREE.Group();
+  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.19, 0.62, 10), stemMat);
+  stalk.position.y = 0.30; stalk.castShadow = true;
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), stemMat);
+  knob.position.y = 0.60;
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 0.20, 12), stemMat);
+  base.position.y = 0.02;
+  stem.add(stalk, knob, base);
+  stem.position.set(-0.06, 2.04, 0);
+  stem.rotation.z = 0.30;
+  grp.add(stem);
+  // beyaz parlama şeridi (üst-sol highlight)
+  const hl = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), highlightMat);
+  hl.scale.set(1.0, 2.6, 0.7);
+  hl.position.set(-0.40, 1.35, 0.40);
+  hl.rotation.z = 0.25;
+  grp.add(hl);
+  grp.scale.setScalar(0.72);
+  return grp;
+}
+
+// ---------- şerit objeleri havuzu ----------
+const OBJ_POOL_SIZE = 26;
+const laneObjects = [];   // aktif
+const objPool = [];
+
+function makeLaneObject() {
+  const g = new THREE.Group();
+  const dome = new THREE.Mesh(domeGeo, bubbleMat);
+  dome.scale.set(1, 0.62, 1);
+  dome.castShadow = true;
+  const crater = new THREE.Group();
+  const disc = new THREE.Mesh(craterDiscGeo, craterMat);
+  disc.rotation.x = -Math.PI/2; disc.position.y = 0.02;
+  const rim = new THREE.Mesh(craterRimGeo, rimMat);
+  rim.rotation.x = Math.PI/2; rim.position.y = 0.05; rim.scale.set(1, 1, 0.55);
+  crater.add(disc, rim);
+  const pepper = buildPepper();
+  g.add(dome, crater, pepper);
+  g.userData = { dome, crater, pepper, type:'bubble', popped:false };
+  g.visible = false;
+  scene.add(g);
+  return g;
+}
+for (let i = 0; i < OBJ_POOL_SIZE; i++) objPool.push(makeLaneObject());
+
+function spawnObject(z, type) {
+  const g = objPool.pop() || makeLaneObject();
+  const u = g.userData;
+  u.type = type; u.popped = false;
+  u.dome.visible = type === 'bubble';
+  u.crater.visible = false;
+  u.pepper.visible = type === 'pepper';
+  u.pepper.scale.setScalar(0.72);
+  u.pepper.rotation.y = Math.random()*Math.PI*2;
+  g.position.set(0, 0, z);
+  g.visible = true;
+  laneObjects.push(g);
+}
+
+function recycleObject(g) {
+  g.visible = false;
+  objPool.push(g);
+}
+
+// ---------- patlama parçacıkları (beyaz) ----------
+const BURST_CAP = 240;
+const burstPos = new Float32Array(BURST_CAP*3);
+const burstVel = new Float32Array(BURST_CAP*3);
+const burstLife = new Float32Array(BURST_CAP);
+burstPos.fill(-999);
+const burstGeo = new THREE.BufferGeometry();
+burstGeo.setAttribute('position', new THREE.BufferAttribute(burstPos, 3));
+const burstPoints = new THREE.Points(burstGeo, new THREE.PointsMaterial({
+  color:0xffffff, size:0.17, transparent:true, opacity:0.95, depthWrite:false,
+}));
+burstPoints.frustumCulled = false;
+scene.add(burstPoints);
+let burstCursor = 0;
+function emitBurst(x, y, z, n) {
+  for (let i = 0; i < n; i++) {
+    const k = burstCursor = (burstCursor+1) % BURST_CAP;
+    burstPos[k*3] = x; burstPos[k*3+1] = y+0.4; burstPos[k*3+2] = z;
+    const a = Math.random()*Math.PI*2, s = 1.5+Math.random()*3;
+    burstVel[k*3] = Math.cos(a)*s;
+    burstVel[k*3+1] = 2.5+Math.random()*3.5;
+    burstVel[k*3+2] = Math.sin(a)*s;
+    burstLife[k] = 0.45;
+  }
+}
+function updateBurst(dt) {
+  for (let k = 0; k < BURST_CAP; k++) {
+    if (burstLife[k] <= 0) continue;
+    burstLife[k] -= dt;
+    if (burstLife[k] <= 0) { burstPos[k*3+1] = -999; continue; }
+    burstVel[k*3+1] -= 12*dt;
+    burstPos[k*3]   += burstVel[k*3]*dt;
+    burstPos[k*3+1] += burstVel[k*3+1]*dt;
+    burstPos[k*3+2] += burstVel[k*3+2]*dt;
+  }
+  burstGeo.attributes.position.needsUpdate = true;
+}
+
+// ---------- halka dalgası (ripple) havuzu ----------
+const ripples = [];
+{
+  const g = new THREE.TorusGeometry(1, 0.045, 8, 32);
+  for (let i = 0; i < 6; i++) {
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0 }));
+    m.rotation.x = -Math.PI/2; m.visible = false;
+    scene.add(m);
+    ripples.push({ mesh:m, t:1 });
+  }
+}
+function emitRipple(x, z) {
+  const r = ripples.find(r => r.t >= 1) || ripples[0];
+  r.t = 0;
+  r.mesh.position.set(x, 0.06, z);
+  r.mesh.visible = true;
+}
+function updateRipples(dt) {
+  for (const r of ripples) {
+    if (r.t >= 1) { r.mesh.visible = false; continue; }
+    r.t = Math.min(1, r.t + dt/0.38);
+    const s = 0.6 + r.t*1.9;
+    r.mesh.scale.setScalar(s);
+    r.mesh.material.opacity = 0.9*(1-r.t);
+  }
+}
+
+// ---------- 3D el (sağdan gelen, gerçekçi ten tonu) ----------
+const skinMat  = new THREE.MeshPhongMaterial({ color:0xE8A574, shininess:16, specular:0x2a160a });
+const skinMat2 = new THREE.MeshPhongMaterial({ color:0xD9946A, shininess:16, specular:0x2a160a });
+const nailMat  = new THREE.MeshPhongMaterial({ color:0xFFE3D0, shininess:70, specular:0xffffff });
+
+function capsule(r, len, mat) {
+  const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, 12), mat);
+  m.castShadow = true;
+  return m;
+}
+const hand = new THREE.Group();
+{
+  // avuç
+  const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 16), skinMat);
+  palm.scale.set(0.66, 0.30, 0.80);
+  palm.castShadow = true;
+  hand.add(palm);
+  // işaret parmağı (uzatılmış, basan parmak) — -z yönüne
+  const idx1 = capsule(0.145, 0.42, skinMat);
+  idx1.rotation.x = Math.PI/2 + 0.18;
+  idx1.position.set(-0.42, -0.05, -0.92);
+  const idx2 = capsule(0.13, 0.34, skinMat2);
+  idx2.rotation.x = Math.PI/2 + 0.38;
+  idx2.position.set(-0.42, -0.19, -1.34);
+  const nail = new THREE.Mesh(new THREE.SphereGeometry(0.115, 10, 8), nailMat);
+  nail.scale.set(1, 0.45, 1.25);
+  nail.position.set(-0.42, -0.24, -1.56);
+  hand.add(idx1, idx2, nail);
+  // parmak ucu işareti (basma noktası hesabı için görünmez)
+  const tip = new THREE.Object3D();
+  tip.position.set(-0.42, -0.34, -1.60);
+  hand.add(tip);
+  hand.userData.tip = tip;
+  // kıvrık orta/yüzük/serçe parmaklar
+  const xs = [-0.13, 0.16, 0.44];
+  const rs = [0.145, 0.135, 0.115];
+  for (let i = 0; i < 3; i++) {
+    const f1 = capsule(rs[i], 0.28, skinMat);
+    f1.rotation.x = Math.PI/2 + 0.7;
+    f1.position.set(xs[i], -0.18, -0.76);
+    const f2 = capsule(rs[i]*0.92, 0.22, skinMat2);
+    f2.rotation.x = Math.PI/2 + 1.6;
+    f2.position.set(xs[i], -0.40, -0.86);
+    hand.add(f1, f2);
+  }
+  // başparmak
+  const thumb = capsule(0.16, 0.42, skinMat);
+  thumb.rotation.x = Math.PI/2 + 0.2;
+  thumb.rotation.z = -0.7;
+  thumb.position.set(0.72, -0.10, -0.30);
+  hand.add(thumb);
+  // bilek + kol (sağ-alt köşeden ekrana giriyor)
+  const wrist = capsule(0.42, 0.9, skinMat);
+  wrist.rotation.x = Math.PI/2;
+  wrist.rotation.z = -0.12;
+  wrist.position.set(0.22, 0.02, 1.05);
+  const arm = capsule(0.5, 1.6, skinMat2);
+  arm.rotation.x = Math.PI/2;
+  arm.rotation.z = -0.25;
+  arm.position.set(0.72, 0.05, 2.4);
+  hand.add(wrist, arm);
+
+  hand.scale.setScalar(1.55);
+  hand.rotation.y = 0.38;   // parmak sol-ileri doğru baksın (el sağdan geliyor)
+  hand.rotation.x = -0.1;
+  scene.add(hand);
+}
+const HAND_HOVER_Y = 2.1;
+const HAND_PRESS_Y = 0.62;
+const handState = { x:1.6, z:HIT_Z + 1.2, y:HAND_HOVER_Y, pressT:-1, pressDur:0.2, target:null };
+let tipOffset = null; // grup merkezinden parmak ucuna dünya-uzayı farkı (sabit rotasyon → sabit)
+
+function computeTipOffset() {
+  hand.position.set(0, 0, 0);
+  hand.updateMatrixWorld(true);
+  const wp = new THREE.Vector3();
+  hand.userData.tip.getWorldPosition(wp);
+  tipOffset = wp;
+}
+
+// ---------- arka plan gradyanı (JS ile cross-fade) ----------
+const bgEl = document.getElementById('bg');
+const colLerp = { from:null, to:null, t:1 };
+const cur = { lane:new THREE.Color(STAGES[0].lane), bubble:new THREE.Color(STAGES[0].bubble),
+              rim:new THREE.Color(STAGES[0].rim), crater:new THREE.Color(STAGES[0].crater),
+              bg1:new THREE.Color(STAGES[0].bg1), bg2:new THREE.Color(STAGES[0].bg2) };
+function applyColors() {
+  laneMat.color.copy(cur.lane);
+  bubbleMat.color.copy(cur.bubble);
+  rimMat.color.copy(cur.rim);
+  craterMat.color.copy(cur.crater);
+  scene.fog.color.copy(cur.bg1);
+  bgEl.style.background = `linear-gradient(180deg, #${cur.bg1.getHexString()} 0%, #${cur.bg2.getHexString()} 100%)`;
+  document.getElementById('barfill').style.backgroundColor = `#${cur.lane.getHexString()}`;
+}
+function startStageFade(idx) {
+  const s = STAGES[idx];
+  colLerp.from = { lane:cur.lane.clone(), bubble:cur.bubble.clone(), rim:cur.rim.clone(),
+                   crater:cur.crater.clone(), bg1:cur.bg1.clone(), bg2:cur.bg2.clone() };
+  colLerp.to = { lane:new THREE.Color(s.lane), bubble:new THREE.Color(s.bubble), rim:new THREE.Color(s.rim),
+                 crater:new THREE.Color(s.crater), bg1:new THREE.Color(s.bg1), bg2:new THREE.Color(s.bg2) };
+  colLerp.t = 0;
+}
+function updateColorFade(dt) {
+  if (colLerp.t >= 1) return;
+  colLerp.t = Math.min(1, colLerp.t + dt/1.0);   // ~1 sn yumuşak geçiş
+  const t = colLerp.t*colLerp.t*(3-2*colLerp.t); // smoothstep
+  for (const k of ['lane','bubble','rim','crater','bg1','bg2'])
+    cur[k].copy(colLerp.from[k]).lerp(colLerp.to[k], t);
+  applyColors();
+}
+applyColors();
+
+// ---------- ses (WebAudio) ----------
+let actx = null, master = null, muted = false;
+let noiseBuf = null;
+function initAudio() {
+  if (actx) return;
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  master = actx.createGain();
+  master.gain.value = muted ? 0 : 0.8;
+  master.connect(actx.destination);
+  const len = actx.sampleRate;
+  noiseBuf = actx.createBuffer(1, len, actx.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random()*2-1;
+}
+function env(g, t0, a, peak, dec) {
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(peak, t0+a);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0+a+dec);
+}
+function popSound(combo) {
+  if (!actx || muted) return;
+  const t = actx.currentTime;
+  const f0 = Math.min(520 * Math.pow(2, Math.min(combo, 24)*0.045), 1500);
+  const o = actx.createOscillator(); o.type = 'triangle';
+  o.frequency.setValueAtTime(f0*1.5, t);
+  o.frequency.exponentialRampToValueAtTime(f0*0.6, t+0.08);
+  const g = actx.createGain(); env(g, t, 0.004, 0.5, 0.09);
+  o.connect(g).connect(master); o.start(t); o.stop(t+0.12);
+  const n = actx.createBufferSource(); n.buffer = noiseBuf;
+  const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2500;
+  const ng = actx.createGain(); env(ng, t, 0.002, 0.18, 0.03);
+  n.connect(hp).connect(ng).connect(master); n.start(t); n.stop(t+0.05);
+}
+function pepperSound() {
+  if (!actx || muted) return;
+  const t = actx.currentTime;
+  const n = actx.createBufferSource(); n.buffer = noiseBuf; n.loop = true;
+  const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 130;
+  const g = actx.createGain(); env(g, t, 0.01, 1.0, 1.3);
+  n.connect(lp).connect(g).connect(master); n.start(t); n.stop(t+1.5);
+  const o = actx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(60, t); o.frequency.exponentialRampToValueAtTime(32, t+1.0);
+  const og = actx.createGain(); env(og, t, 0.01, 0.6, 1.0);
+  o.connect(og).connect(master); o.start(t); o.stop(t+1.2);
+  const s = actx.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+  const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 4000;
+  const sg = actx.createGain(); env(sg, t, 0.05, 0.22, 1.7);
+  s.connect(hp).connect(sg).connect(master); s.start(t); s.stop(t+1.9);
+}
+function note(f, t0, dur, type, vol) {
+  const o = actx.createOscillator(); o.type = type || 'triangle'; o.frequency.value = f;
+  const g = actx.createGain(); env(g, t0, 0.01, vol || 0.3, dur);
+  o.connect(g).connect(master); o.start(t0); o.stop(t0+dur+0.05);
+}
+function jingle() {
+  if (!actx || muted) return;
+  const t = actx.currentTime;
+  [523, 659, 784, 1047].forEach((f, i) => note(f, t+i*0.09, 0.16, 'triangle', 0.3));
+}
+function victorySound() {
+  if (!actx || muted) return;
+  const t = actx.currentTime;
+  [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => note(f, t+i*0.11, 0.3, 'triangle', 0.32));
+}
+function missSound() {
+  if (!actx || muted) return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator(); o.type = 'square';
+  o.frequency.setValueAtTime(190, t); o.frequency.exponentialRampToValueAtTime(110, t+0.15);
+  const g = actx.createGain(); env(g, t, 0.005, 0.18, 0.16);
+  o.connect(g).connect(master); o.start(t); o.stop(t+0.2);
+}
+document.getElementById('mute').addEventListener('click', (e) => {
+  e.stopPropagation();
+  muted = !muted;
+  if (master) master.gain.value = muted ? 0 : 0.8;
+  e.target.textContent = muted ? '🔇' : '🔊';
+});
+
+// ---------- HUD öğeleri ----------
+const barFill = document.getElementById('barfill');
+const scoreEl = document.getElementById('score');
+const comboEl = document.getElementById('combo');
+const warnEl = document.getElementById('warn');
+const flashEl = document.getElementById('flash');
+const fireLayer = document.getElementById('firelayer');
+const bigPepper = document.getElementById('bigpepper');
+const farmerEl = document.getElementById('farmer');
+const thiefEl = document.getElementById('thief');
+const startEl = document.getElementById('start');
+const winEl = document.getElementById('win');
+
+let comboTimer = 0, warnTimer = 0, farmerTimer = 0;
+function showCombo(n) {
+  comboEl.textContent = `COMBO x${n}`;
+  comboEl.classList.add('show');
+  comboTimer = 1.2;
+}
+function showWarn(msg, dur) {
+  warnEl.textContent = msg;
+  warnEl.style.opacity = 1;
+  warnTimer = dur || 1.2;
+}
+function setFarmer(emoji, dur) {
+  farmerEl.textContent = emoji;
+  farmerTimer = dur || 1.5;
+}
+function updateThief() {
+  // kaçırma arttıkça hırsız sağdan sola (çiftçiye doğru) yaklaşır
+  const w = window.innerWidth;
+  const maxShift = Math.min(w*0.5, 240);
+  thiefEl.style.transform = `translateX(${-(misses/MISS_LIMIT)*maxShift}px)`;
+}
+
+// ---------- biber isabet efekti (ekran) ----------
+let flashT = -1;
+function pepperScreenFX() {
+  flashT = 0;
+  bigPepper.classList.add('show');
+  setTimeout(() => bigPepper.classList.remove('show'), 1400);
+  for (let i = 0; i < 26; i++) {
+    const f = document.createElement('div');
+    f.className = 'fire';
+    f.textContent = '🔥';
+    f.style.left = `${Math.random()*100}%`;
+    f.style.animationDelay = `${Math.random()*0.7}s`;
+    f.style.animationDuration = `${1.1 + Math.random()*0.8}s`;
+    fireLayer.appendChild(f);
+    setTimeout(() => f.remove(), 2600);
+  }
+  setFarmer('😱', 2.4);
+}
+
+// ---------- oyun durumu ----------
+let state = 'ready';      // ready | play | win
+let holding = false;
+let progress = 0, stage = 0, score = 0, combo = 0, misses = 0;
+let speed = SPEED_MIN;
+let freezeTimer = 0;
+let shakeAmp = 0, shakeDecay = 0;
+let spawnIndex = 0, lastWasPepper = false;
+let elapsed = 0;
+
+function resetGame() {
+  for (const g of laneObjects) recycleObject(g);
+  laneObjects.length = 0;
+  progress = 0; stage = 0; score = 0; combo = 0; misses = 0;
+  speed = SPEED_MIN; freezeTimer = 0; shakeAmp = 0;
+  spawnIndex = 0; lastWasPepper = false; elapsed = 0;
+  handState.x = 1.6; handState.z = HIT_Z + 1.2; handState.y = HAND_HOVER_Y;
+  handState.pressT = -1; handState.target = null;
+  for (const k of Object.keys(cur)) cur[k] = new THREE.Color(STAGES[0][ {lane:'lane',bubble:'bubble',rim:'rim',crater:'crater',bg1:'bg1',bg2:'bg2'}[k] ]);
+  colLerp.t = 1;
+  applyColors();
+  barFill.style.width = '0%';
+  scoreEl.textContent = '0';
+  farmerEl.textContent = '👨‍🌾';
+  updateThief();
+  // ısınma: ilk obje uzaktan gelsin, oyuncu mekaniği kavrasın
+  spawnObject(-13, 'bubble'); spawnIndex = 1;
+  let z = -13 - SPACING;
+  while (z > SPAWN_EDGE) { spawnNext(z); z -= SPACING; }
+}
+
+function spawnNext(z) {
+  let type = 'bubble';
+  if (spawnIndex === 3) type = 'pepper';                       // 4. objede ilk biber
+  else if (spawnIndex > 3 && !lastWasPepper) {
+    const chance = 0.06 + (progress/100)*0.15;                 // MAX aşamada biber sıklığı artar
+    if (Math.random() < chance) type = 'pepper';
+  }
+  lastWasPepper = type === 'pepper';
+  spawnObject(z, type);
+  spawnIndex++;
+}
+
+// ---------- patlatma ----------
+function popObject(g) {
+  const u = g.userData;
+  u.popped = true;
+  if (u.type === 'bubble') {
+    u.dome.visible = false;
+    u.crater.visible = true;
+    emitBurst(g.position.x, 0, g.position.z, 14);
+    emitRipple(g.position.x, g.position.z);
+    combo++;
+    score += Math.round(10 * (1 + combo*0.1));
+    scoreEl.textContent = score;
+    if (combo >= 3) showCombo(combo);
+    popSound(combo);
+    shakeAmp = Math.max(shakeAmp, 0.03); shakeDecay = 8;
+    progress = Math.min(100, progress + PROGRESS_PER_POP);
+    barFill.style.width = `${progress}%`;
+    const target = STAGE_THRESHOLDS.filter(th => progress >= th).length - 1;
+    if (target > stage) {
+      stage = target;
+      startStageFade(stage);
+      jingle();
+      setFarmer('🥳', 1.4);
+    }
+    if (progress >= 100) winGame();
+  } else {
+    // 🌶️ BİBER: ekran kızarır, alevler fışkırır, sert titreme + 2 sn donma (baştan BAŞLAMAZ)
+    u.pepper.scale.y *= 0.3;   // ezilmiş biber
+    combo = 0;
+    freezeTimer = FREEZE_TIME;
+    shakeAmp = 0.4; shakeDecay = 0.22;
+    pepperScreenFX();
+    pepperSound();
+  }
+}
+
+function missBubble() {
+  misses++;
+  combo = 0;
+  missSound();
+  updateThief();
+  if (misses >= MISS_LIMIT) {
+    // hırsız yetişti: bar cezası, sonra sıfırlanır — oyun akmaya devam eder
+    const floor = STAGE_THRESHOLDS[stage];
+    progress = Math.max(floor, progress - MISS_PENALTY);
+    barFill.style.width = `${progress}%`;
+    misses = 0;
+    updateThief();
+    showWarn('🦹 Hırsız yetişti! Bar geriledi!', 1.6);
+    setFarmer('😰', 1.6);
+  } else {
+    showWarn('Kaçırdın! Hırsız yaklaşıyor…', 1.0);
+  }
+}
+
+function winGame() {
+  state = 'win';
+  holding = false;
+  document.getElementById('winscore').textContent = `Skor: ${score}`;
+  winEl.classList.remove('hidden');
+  victorySound();
+}
+
+// ---------- kontrol: basılı tut = otomatik patlat ----------
+function onDown(e) {
+  if (e.target.closest && e.target.closest('#mute, #replay')) return;
+  initAudio();
+  if (actx.state === 'suspended') actx.resume();
+  if (state === 'ready') {
+    state = 'play';
+    startEl.classList.add('hidden');
+  }
+  if (state === 'play') holding = true;
+}
+function onUp() { holding = false; }
+window.addEventListener('pointerdown', onDown);
+window.addEventListener('pointerup', onUp);
+window.addEventListener('pointercancel', onUp);
+window.addEventListener('contextmenu', e => e.preventDefault());
+document.getElementById('replay').addEventListener('click', () => {
+  winEl.classList.add('hidden');
+  resetGame();
+  state = 'play';
+});
+
+// ---------- el mantığı ----------
+function updateHand(dt) {
+  const u = handState;
+  // hedef: patlatılmamış, ele en yakın (en büyük z) yaklaşan obje
+  let target = null;
+  for (const g of laneObjects) {
+    if (g.userData.popped) continue;
+    if (g.position.z > MISS_Z) continue;
+    if (!target || g.position.z > target.position.z) target = g;
+  }
+  u.target = target;
+
+  if (holding && target) {
+    // elin x'i hedefe akıcı kilitlenir; refleks hızla orantılı
+    const follow = Math.min(1, dt * (8 + speed));
+    u.x += (target.position.x - u.x) * follow;
+    u.z += (HIT_Z - u.z) * follow;
+    u.pressDur = Math.max(0.085, 0.22 - stage*0.03);
+    // obje basma noktasına gelince bas
+    const lead = speed * u.pressDur * 0.5;
+    if (u.pressT < 0 && target.position.z >= HIT_Z - lead) {
+      u.pressT = 0;
+    }
+  }
+  // basma animasyonu (yarıda patlat)
+  if (u.pressT >= 0) {
+    u.pressT += dt;
+    const k = u.pressT / u.pressDur;
+    if (k >= 1) {
+      u.pressT = -1;
+      u.y = HAND_HOVER_Y;
+    } else {
+      u.y = HAND_HOVER_Y - (HAND_HOVER_Y - HAND_PRESS_Y) * Math.sin(k * Math.PI);
+      if (k >= 0.5 && u.target && !u.target.userData.popped && u.target.position.z >= HIT_Z - speed*u.pressDur) {
+        popObject(u.target);
+      }
+    }
+  } else if (!holding) {
+    // bırakınca el olduğu yerde durur (hafif yukarı döner)
+    u.y += (HAND_HOVER_Y - u.y) * Math.min(1, dt*6);
+  }
+  if (tipOffset) {
+    hand.position.set(u.x - tipOffset.x, u.y - tipOffset.y, u.z - tipOffset.z);
+  }
+}
+
+// ---------- ana döngü ----------
+const clock = new THREE.Clock();
+let sizeW = 0, sizeH = 0;
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  if (w === sizeW && h === sizeH) return;
+  sizeW = w; sizeH = h;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  // geniş ekranda şerit taşmasın diye dikey fov'u koru
+  camera.fov = camera.aspect > 0.8 ? 48 : 58;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+
+function animate() {
+  requestAnimationFrame(animate);
+  resize();
+  if (!tipOffset) computeTipOffset();
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  // ekran kızarması (flash)
+  if (flashT >= 0) {
+    flashT += dt;
+    const k = flashT / 2.2;
+    flashEl.style.opacity = k >= 1 ? 0 : (k < 0.15 ? k/0.15 : 1 - (k-0.15)/0.85);
+    if (k >= 1) flashT = -1;
+  }
+  // HUD sayaçları
+  if (comboTimer > 0) { comboTimer -= dt; if (comboTimer <= 0) comboEl.classList.remove('show'); }
+  if (warnTimer > 0) { warnTimer -= dt; if (warnTimer <= 0) warnEl.style.opacity = 0; }
+  if (farmerTimer > 0) { farmerTimer -= dt; if (farmerTimer <= 0) farmerEl.textContent = '👨‍🌾'; }
+
+  // kamera sarsıntısı (donma sırasında da devam eder)
+  if (shakeAmp > 0.001) {
+    camera.position.set(
+      CAM_POS.x + (Math.random()*2-1)*shakeAmp,
+      CAM_POS.y + (Math.random()*2-1)*shakeAmp,
+      CAM_POS.z + (Math.random()*2-1)*shakeAmp*0.5
+    );
+    shakeAmp *= Math.pow(0.5, dt/ (shakeDecay*0.1));
+    if (shakeAmp <= 0.001) shakeAmp = 0;
+  } else {
+    camera.position.copy(CAM_POS);
+  }
+  camera.lookAt(CAM_TARGET);
+
+  updateColorFade(dt);
+  updateBurst(dt);
+  updateRipples(dt);
+
+  if (state === 'play') {
+    if (freezeTimer > 0) {
+      // 🌶️ isabet: dünya donar, efektler akar; süre bitince kaldığı yerden devam
+      freezeTimer -= dt;
+    } else {
+      elapsed += dt;
+      // hız eğrisi: bar doldukça SPEED_MIN → SPEED_MAX
+      speed = SPEED_MIN + (SPEED_MAX - SPEED_MIN) * (progress/100);
+      // objeleri akıt
+      let farthest = 0;
+      for (let i = laneObjects.length - 1; i >= 0; i--) {
+        const g = laneObjects[i];
+        g.position.z += speed * dt;
+        if (!g.userData.popped && g.userData.type === 'bubble' && g.position.z > MISS_Z) {
+          g.userData.popped = true;  // tekrar sayılmasın
+          missBubble();
+        }
+        if (g.position.z > RECYCLE_Z) {
+          recycleObject(g);
+          laneObjects.splice(i, 1);
+        } else if (g.position.z < farthest) farthest = g.position.z;
+      }
+      // yeni obje doğur
+      while (farthest > SPAWN_EDGE) {
+        farthest -= SPACING;
+        spawnNext(farthest);
+      }
+      updateHand(dt);
+      // hız çizgileri
+      streakMat.opacity = Math.min(0.55, Math.max(0.12, (speed - SPEED_MIN) / 12 + 0.12));
+      for (const s of streaks) {
+        s.position.z += speed * 2.3 * dt;
+        s.scale.z = 0.8 + speed * 0.22;
+        if (s.position.z > 10) s.position.z = -44 - Math.random()*8;
+      }
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+resetGame();
+resize();
+animate();
+</script>
+</body>
+</html>
